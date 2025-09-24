@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Icarus Verilog Preprocessing and Parsing Pipeline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", sans-serif; line-height: 1.6; margin: 0; padding: 0; }
+    header { background: #1f2937; color: #fff; padding: 2rem 1.5rem; }
+    header h1 { margin: 0 0 .5rem; font-size: 1.8rem; }
+    header p { margin: 0; opacity: .85; }
+    main { padding: 2rem 1.5rem; max-width: 1000px; margin: 0 auto; }
+    h2 { margin-top: 2rem; font-size: 1.4rem; }
+    h3 { margin-top: 1.5rem; font-size: 1.1rem; }
+    ul, ol { padding-left: 1.25rem; }
+    code, pre { background: #f6f8fa; border: 1px solid #eaecef; border-radius: 6px; }
+    pre { padding: .75rem; overflow-x: auto; }
+    code { padding: .1rem .3rem; }
+    .note { background: #fef3c7; border: 1px solid #fde68a; padding: .75rem; border-radius: 6px; }
+    footer { border-top: 1px solid #e5e7eb; margin-top: 2rem; padding: 1.5rem; font-size: .9rem; color: #4b5563; }
+    @media (prefers-color-scheme: dark) {
+      header { background: #111827; }
+      main, footer { color: #e5e7eb; }
+      code, pre { background: #111827; border-color: #374151; }
+      .note { background: #1f2937; border-color: #374151; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Icarus Verilog Preprocessing and Parsing Pipeline</h1>
+    <p>A concise technical overview of how ivlpp and the compiler (ivl) work together</p>
+  </header>
+
+  <main>
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>Icarus Verilog compiles Verilog/SystemVerilog sources by first
+        preprocessing them with <strong>ivlpp</strong> to produce a single flattened stream,
+        then lexing and parsing that stream into a rich parse form (pform),
+        elaborating it into a netlist, optimizing, and finally emitting target code
+        (commonly VVP bytecode) for simulation or downstream tools.</p>
+    </section>
+
+    <section id="preprocessing">
+      <h2>Preprocessing (ivlpp)</h2>
+      <p><code>ivlpp</code> is a standalone preprocessor invoked by <code>iverilog</code>. It processes
+        directives and macros, and manages include files and conditional compilation,
+        optionally emitting <code>`line</code> directives to preserve file/line mapping.</p>
+
+      <h3>Inputs and Options</h3>
+      <ul>
+        <li><code>-f</code> filelist: list of sources; <code>-F</code> flags file: defines/includes.</li>
+        <li><code>-I</code> include dirs; <code>-K</code> keyword macros (pass-through directives).</li>
+        <li><code>-L</code> emit <code>`line</code> directives; <code>-W</code> redef warnings.</li>
+        <li><code>-P</code>/<code>-p</code> load/dump precompiled defines; <code>-o</code> output path.</li>
+      </ul>
+
+      <h3>Include Handling</h3>
+      <ul>
+        <li>Search order: current file directory (unless disabled via relative mode), then <code>-I</code> paths; absolute paths are used as-is.</li>
+        <li>On include: push a new file buffer onto the include stack; optionally emit <code>`line</code> and write dependency entries when requested.</li>
+        <li>Comments on the include line are preserved and emitted after the included content.</li>
+      </ul>
+
+      <h3>Macros</h3>
+      <ul>
+        <li><strong>Definition</strong>: <code>`define</code> with optional formal arguments and defaults (e.g., <code>name(arg=default)</code>).</li>
+        <li><strong>Body collection</strong>: strips comments, trims whitespace, handles line continuation (<code>\</code>).</li>
+        <li><strong>Formal substitution</strong>: occurrences of argument names in the body are rewritten to an internal <em>argument mark</em> + index to splice actuals efficiently at expansion time.</li>
+        <li><strong>Expansion</strong>: argument parsing handles nested calls with balanced parentheses; the expansion is re-lexed by pushing a string “input” on the include stack.</li>
+        <li><strong>Stringification</strong> (Icarus extension): <code>``NAME</code> turns expansion into a string, escaping quotes and backslashes appropriately.</li>
+        <li><strong>Magic macros</strong>: <code>__LINE__</code> and <code>__FILE__</code> computed from the outermost real file context.</li>
+        <li><strong>Keyword macros</strong>: certain directive-like tokens are defined to pass through untouched (e.g., <code>`timescale</code>).</li>
+      </ul>
+
+      <h3>Conditional Compilation</h3>
+      <ul>
+        <li>Supports <code>`ifdef</code>, <code>`ifndef</code>, <code>`elsif</code>, <code>`else</code>, <code>`endif</code> with a stack to ensure proper matching.</li>
+        <li>True branches pass through; false branches are suppressed while maintaining line accounting; mismatches produce diagnostics.</li>
+      </ul>
+
+      <h3>Strings and Comments</h3>
+      <ul>
+        <li>Strings are emitted verbatim; macro expansion does not occur inside normal strings.</li>
+        <li>C-style and pragma comments are passed through; directives nested in comments are ignored. Pragmas allow macro expansion but forbid directive keywords.</li>
+      </ul>
+
+      <h3>Directives</h3>
+      <ul>
+        <li><code>`line</code>: updates current file/line and can be echoed to output (<code>-L</code>).</li>
+        <li><code>`pragma</code>: syntax-checked (must have a name) and passed through.</li>
+      </ul>
+
+      <h3>Precompiled Defines</h3>
+      <ul>
+        <li><code>-p</code> writes defines in a compact binary-safe format; <code>-P</code> loads them.</li>
+        <li>Redefinition warnings controlled via <code>-W</code> flags (<code>redef-all</code>, <code>redef-chg</code>).</li>
+      </ul>
+
+      <h3>VHDL Pass-through</h3>
+      <ul>
+        <li>If configured, <code>.vhd/.vhdl</code> files are preprocessed via <code>vhdlpp</code> and their output is treated as source.</li>
+      </ul>
+    </section>
+
+    <section id="parsing">
+      <h2>Parsing and AST (pform)</h2>
+      <p>After preprocessing, the compiler (<code>ivl</code>) uses a flex scanner (<code>lexor.lex</code>)
+        and a bison grammar (<code>parse.y</code>) to tokenize and parse the source into a rich
+        <em>parse form</em> (pform). This is an AST-like structure comprising typed C++ objects
+        with file/line annotations.</p>
+
+      <h3>Parsed Representation</h3>
+      <ul>
+        <li><strong>Expressions</strong>: <code>PExpr</code> hierarchy (e.g., <code>PENumber</code>, <code>PEUnary</code>, <code>PEBinary</code>, <code>PEConcat</code>, <code>PECallFunction</code>, <code>PEIdent</code>, <code>PETernary</code>, <code>PECast*</code>).</li>
+        <li><strong>Statements/Processes</strong>: <code>Statement</code> hierarchy (<code>PAssign</code>, <code>PAssignNB</code>, <code>PDelayStatement</code>, <code>PEventStatement</code>, <code>PCase</code>, <code>PCondit</code>, <code>PBlock</code>, loops, tasks, calls).</li>
+        <li><strong>Design structure</strong>: <code>Module</code>, ports (<code>Module::port_t</code>), nets/wires (<code>PWire</code>), UDPs, packages, classes, typedefs, generates, specify blocks (parsed; limited support).</li>
+        <li><strong>Names</strong>: <code>pform_name_t</code> and <code>PEIdent</code> capture hierarchical identifiers, part/bit selects, and package-resolved names.</li>
+      </ul>
+
+      <h3>Scope and Attributes</h3>
+      <ul>
+        <li>Scopes are pushed/popped for modules, functions, tasks, blocks, generates, packages, classes, etc.</li>
+        <li>ANSI/non-ANSI ports are recorded with direction, kind, data type, and binding expressions or concatenations.</li>
+        <li>Attributes (<code>(*</code> ... <code>*)</code>) are collected and bound to nodes.</li>
+        <li>All nodes get file/line info via <code>FILE_NAME</code> macros for diagnostics.</li>
+      </ul>
+
+      <h3>Post-Parse Phases</h3>
+      <ul>
+        <li><strong>Elaboration</strong>: scope and parameter resolution builds a <em>NetScope</em> tree; the structural and behavioural netlist is generated (see <code>elab_*.cc</code>, <code>netlist.*</code>).</li>
+        <li><strong>Optimization</strong>: transformations like constant propagation, dead-code removal, combinational reduction (<code>cprop.cc</code>, <code>expr_synth.cc</code>, <code>nodangle.cc</code>, etc.).</li>
+        <li><strong>Code Generation</strong>: <code>emit()</code> walks the netlist and calls a target backend (<code>tgt-vvp</code>, <code>tgt-verilog</code>, <code>tgt-vhdl</code>, <code>tgt-blif</code>, etc.).</li>
+      </ul>
+
+      <h3>Introspection</h3>
+      <ul>
+        <li><code>-P &lt;path&gt;</code>: dump the pform (AST-like) for debugging.</li>
+        <li><code>-N &lt;path&gt;</code>: dump the elaborated/optimized netlist pre-codegen.</li>
+        <li><code>-g*</code>: feature flags (e.g., <code>-gspecify</code>, <code>-g2005-sv</code>, <code>-gicarus-misc</code>).</li>
+      </ul>
+    </section>
+
+    <section id="together">
+      <h2>Putting It Together</h2>
+      <ol>
+        <li><strong>Preprocess</strong> with <code>ivlpp</code>: expand macros/conditionals, resolve includes, preserve line mapping.</li>
+        <li><strong>Lex &amp; Parse</strong> with <code>ivl</code>: build pform nodes with typed C++ objects and file/line metadata.</li>
+        <li><strong>Elaborate</strong>: resolve scopes and parameters, generate netlist.</li>
+        <li><strong>Optimize</strong>: apply generic, target-independent passes.</li>
+        <li><strong>Emit</strong> target code: VVP (default) or other backends for simulation or downstream consumption.</li>
+      </ol>
+      <div class="note">
+        <strong>Note:</strong> Specify blocks are parsed but disabled by default; enable with <code>-gspecify</code> for limited support. SystemVerilog support is partial and controlled by generation flags.
+      </div>
+    </section>
+
+    <footer>
+      Generated for Icarus Verilog repository. See README.md and Documentation/ for further details and usage.
+    </footer>
+  </main>
+</body>
+</html>
