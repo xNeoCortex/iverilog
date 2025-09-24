@@ -25,6 +25,7 @@
 # include  <typeinfo>
 # include  <iostream>
 # include  <iomanip>
+# include  <sstream>
 # include  "netlist.h"
 # include  "compiler.h"
 # include  "discipline.h"
@@ -37,6 +38,94 @@
 # include  "PExpr.h"
 
 using namespace std;
+
+/* Helpers for DOT output */
+static std::string dot_escape(const std::string& s)
+{
+      std::string r;
+      r.reserve(s.size());
+      for (size_t i = 0; i < s.size(); ++i) {
+            const char c = s[i];
+            switch (c) {
+              case '"':  r += "\\\""; break;
+              case '\\': r += "\\\\"; break;
+              case '\n': r += "\\n";  break;
+              case '\r': /* ignore CR */ break;
+              case '\t': r += "\\t";  break;
+              default:   r += c;      break;
+            }
+      }
+      return r;
+}
+
+static std::string dot_id(const void* p)
+{
+      std::ostringstream oss;
+      oss << "n" << p;
+      return oss.str();
+}
+
+/* Dump the design hierarchy (Graphviz DOT) */
+void Design::dump_hierarchy_dot(std::ostream& o) const
+{
+      o << "digraph ivl_hierarchy {\n";
+      o << "  graph [rankdir=LR];\n";
+      o << "  node  [shape=box, fontname=\"Helvetica\", fontsize=10];\n";
+      o << "  edge  [fontname=\"Helvetica\", fontsize=9, color=\"#555555\"];\n";
+
+      /* Root scopes (top-level modules) */
+      for (std::list<NetScope*>::const_iterator it = root_scopes_.begin();
+           it != root_scopes_.end(); ++it) {
+            if (*it) (*it)->dump_hierarchy_dot(o);
+      }
+
+      /* Also include packages as separate trees */
+      for (std::map<perm_string,NetScope*>::const_iterator pk = packages_.begin();
+           pk != packages_.end(); ++pk) {
+            if (pk->second) pk->second->dump_hierarchy_dot(o);
+      }
+
+      o << "}\n";
+}
+
+/* Dump a NetScope and its children as DOT nodes/edges */
+void NetScope::dump_hierarchy_dot(std::ostream& o) const
+{
+      const std::string id = dot_id(this);
+
+      const char* base_c = basename();
+      std::string base = base_c ? std::string(base_c) : std::string("");
+
+      const char* mod_c = module_name();
+      std::string mod = mod_c ? std::string(mod_c) : std::string("");
+
+      std::string label = base.empty() ? std::string("<anonymous>") : base;
+      if (!mod.empty()) {
+            label += " [";
+            label += mod;
+            label += "]";
+      }
+
+      std::ostringstream tip;
+      tip << scope_path(this);
+      std::string fileline = get_fileline();
+      if (!fileline.empty()) {
+            tip << " (" << fileline << ")";
+      }
+
+      o << "  \"" << id << "\""
+        << " [label=\""   << dot_escape(label)   << "\""
+        << ", tooltip=\"" << dot_escape(tip.str()) << "\""
+        << "];\n";
+
+      for (std::map<hname_t,NetScope*>::const_iterator cur = children_.begin();
+           cur != children_.end(); ++cur) {
+            const NetScope* child = cur->second;
+            if (!child) continue;
+            child->dump_hierarchy_dot(o);
+            o << "  \"" << id << "\" -> \"" << dot_id(child) << "\";\n";
+      }
+}
 
 static ostream& operator<< (ostream&o, NetBlock::Type t)
 {

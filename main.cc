@@ -915,6 +915,7 @@ int main(int argc, char*argv[])
 
       const char* net_path = 0;
       const char* pf_path = 0;
+      const char* dot_path = 0;
       int opt;
 
       struct tms cycles[5];
@@ -939,7 +940,7 @@ int main(int argc, char*argv[])
       min_typ_max_flag = TYP;
       min_typ_max_warn = 10;
 
-      while ((opt = getopt(argc, argv, "C:F:f:hN:P:p:Vv")) != EOF) switch (opt) {
+      while ((opt = getopt(argc, argv, "C:F:f:hN:P:G:p:Vv")) != EOF) switch (opt) {
 
 	  case 'C':
 	    read_iconfig_file(optarg);
@@ -954,14 +955,17 @@ int main(int argc, char*argv[])
 	    help_flag = true;
 	    break;
 	  case 'N':
-	    net_path = optarg;
-	    break;
-	  case 'P':
-	    pf_path = optarg;
-	    break;
-	  case 'p':
-	    parm_to_flagmap(optarg);
-	    break;
+        net_path = optarg;
+        break;
+      case 'P':
+        pf_path = optarg;
+        break;
+      case 'G':
+        dot_path = optarg;
+        break;
+      case 'p':
+        parm_to_flagmap(optarg);
+        break;
 	  case 'v':
 	    verbose_flag = true;
 #          if defined(HAVE_TIMES)
@@ -1003,6 +1007,7 @@ int main(int argc, char*argv[])
 "\t-h               Print usage information, and exit.\n"
 "\t-N <file>        Dump the elaborated netlist to <file>.\n"
 "\t-P <file>        Write the parsed input to <file>.\n"
+"\t-G <file>        Dump the elaborated hierarchy (Graphviz DOT) to <file>.\n"
 "\t-p <assign>      Set a parameter value.\n"
 "\t-v               Print progress indications"
 #if defined(HAVE_TIMES)
@@ -1308,10 +1313,17 @@ int main(int argc, char*argv[])
 
       if (net_path) {
 	    if (verbose_flag)
-		  cerr<<" dumping netlist to " <<net_path<< "..." <<endl;
+		  cerr<<" dumping netlist to " <<net_path<< "...\" <<endl;
 
 	    ofstream out (net_path);
 	    des->dump(out);
+      }
+
+      if (dot_path) {
+            if (verbose_flag)
+                  cerr << " dumping hierarchy (DOT) to " << dot_path << "..." << endl;
+            ofstream dout(dot_path);
+            des->dump_hierarchy_dot(dout);
       }
 
       if (des->errors) {

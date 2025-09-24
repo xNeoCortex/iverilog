@@ -243,6 +243,15 @@ optimized netlist by using the `-N <path>` flag to the compiler. If
 elaboration succeeds, the final netlist (i.e., after optimizations but
 before code generation) will be dumped into the file named `<path>`.
 
+Additionally, you can generate a Graphviz DOT diagram of the elaborated
+design hierarchy using the `-G <path>` flag to the `ivl` subcommand. The
+resulting DOT file can be rendered with Graphviz, for example:
+
+```
+ivl -G design.dot <other ivl options...>
+dot -Tsvg design.dot -o design.svg
+```
+
 Elaboration is performed in two steps: scopes and parameters
 first, followed by the structural and behavioural elaboration.
 
