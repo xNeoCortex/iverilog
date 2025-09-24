@@ -1194,6 +1194,7 @@ class NetScope : public Definitions, public Attrib {
       perm_string local_symbol();
 
       void dump(std::ostream&) const;
+      void dump_hierarchy_dot(std::ostream&) const;
 	// Check to see if the scope has items that are not allowed
 	// in an always_comb/ff/latch process.
       virtual bool check_synth(ivl_process_type_t pr_type, const NetScope*scope) const;
@@ -5176,6 +5177,7 @@ class Design {
 
 	// Iterate over the design...
       void dump(std::ostream&) const;
+      void dump_hierarchy_dot(std::ostream&) const;
       void functor(struct functor_t*);
       void join_islands(void);
       int emit(struct target_t*) const;
